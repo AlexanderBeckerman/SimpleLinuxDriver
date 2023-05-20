@@ -4,6 +4,7 @@
 #include <linux/ioctl.h>
 
 #define MAJOR_NUM 235
+#define MAX_MINOR_NUM 257
 #define SUCCESS 0
 #define BUF_LEN 128
 #define DEVICE_RANGE_NAME "char_dev"

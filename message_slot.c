@@ -24,8 +24,8 @@ typedef struct channel
 
 } channel;
 
-channel * channel_lists[257]; /* This will hold a pointer to a list of the channels of each device.
-                            Minor numbers do not exceed 256, so we can use a fixed sized array for all possible minor numbers. */
+channel *channel_lists[MAX_MINOR_NUM]; /* This will hold a pointer to a list of the channels of each device.
+                           Minor numbers do not exceed 256, so we can use a fixed sized array for all possible minor numbers. */
 
 static int device_open(struct inode *inode,
                        struct file *file)
@@ -45,8 +45,6 @@ static ssize_t device_read(struct file *file,
                            loff_t *offset)
 {
 
-
-
   return SUCCESS;
 }
 static ssize_t device_write(struct file *file,
@@ -54,13 +52,37 @@ static ssize_t device_write(struct file *file,
                             size_t length,
                             loff_t *offset)
 {
-  
-  if (length <= 0 || length > 128)
-  for( i = 0; i < length && i < BUF_LEN; ++i ) {
-    get_user(the_message[i], &buffer[i]);
+  char the_message[BUF_LEN]; // We use a temporary buffer to copy to so we can make sure the write was atomic
+  int minor = iminor(file->f_inode);
+  if(file->private_data == NULL){
+    errno = EINVAL;
+    return -1;
+  }
+  channel * f_chnl = find_channel((int)file->private_data, minor);
+  if (f_chnl == NULL)
+  {
+    errno = EINVAL;
+    return -1;
   }
 
-
+  if (length <= 0 || length > BUF_LEN)
+  {
+    errno = EMSGSIZE;
+    return -1;
+  }
+  for (i = 0; i < length && i < BUF_LEN; ++i)
+  {
+    if (get_user(the_message[i], &buffer[i]) != 0)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+  }
+  for (i = 0; i < length && i < BUF_LEN; ++i)
+  {
+    f_chnl->msg[i] = the_message[i];
+  }
+  f_chnl->msg_len = length;
 
   return SUCCESS;
 }
@@ -68,15 +90,17 @@ static long device_ioctl(struct file *file,
                          unsigned int ioctl_command_id,
                          unsigned long ioctl_param)
 {
+  int minor = iminor(file->f_inode);
+  channel *head = channel_lists[minor]; // Get the current channels corresponding to the inode
   if (ioctl_command_id != MSG_SLOT_CHANNEL || ioctl_param == 0)
   {
     errno = EINVAL;
     return -1;
   }
-  int minor = iminor(file->f_inode);
-  channel *head = channel_lists[minor]; // Get the current channels corresponding to the inode
+
+  file->private_data = (void *)ioctl_param; // Store the id in the file private data
   if (head == NULL)
-  { // If we don't have any channels yet
+  { // If we don't have any channels yet, we want to create a new channel
     head = kmalloc(sizeof(channel), GFP_KERNEL);
     if (head == NULL)
     { // Check for failed kmalloc
@@ -88,23 +112,20 @@ static long device_ioctl(struct file *file,
     head->id = ioctl_param;
     head->msg = NULL;
     head->msg_len = 0;
-    file->private_data = head; // Store the channel that is in use inside the fd private data field
     return SUCCESS;
   }
   else
   {
     channel *temp = head;
     while (temp->next != NULL)
-    { // Iterate over the channels
+    { // Iterate over the channels and create the channel if needed
       if (temp->id == ioctl_param)
       { // Channel already exists
-        file->private_data = (void *)temp;
         return SUCCESS;
       }
     }
     if (temp->id == ioctl_param)
     { // We stopped one channel before the end so we check the last channel id
-      file->private_data = (void *)temp;
       return SUCCESS;
     }
     temp->next = kmalloc(sizeof(channel), GFP_KERNEL);
@@ -119,7 +140,6 @@ static long device_ioctl(struct file *file,
     temp->id = ioctl_param;
     temp->msg = NULL;
     temp->msg_len = 0;
-    file->private_data = (void *)temp;
   }
 
   return SUCCESS;
@@ -139,7 +159,7 @@ static int __init simple_init(void)
   int rc = -1;
   int i = 0;
 
-  for (i; i < 257; i++) // Initialize empty channel list array
+  for (i; i < MAX_MINOR_NUM; i++) // Initialize empty channel list array
   {
     channel_lists[i] = NULL;
   }
@@ -162,6 +182,20 @@ static void __exit simple_cleanup(void)
   // Unregister the device
   // Should always succeed
   unregister_chrdev(MAJOR_NUM, DEVICE_RANGE_NAME);
+}
+
+static channel * find_channel(int qid, int minor)
+{
+  channel * temp = channel_lists[minor];
+  if(temp == NULL){
+    return NULL;
+  }
+  while(temp != NULL){
+    if(temp->id == qid){
+      return temp;
+    }
+  }
+  return NULL;
 }
 
 module_init(simple_init);
