@@ -10,9 +10,8 @@
 #include <linux/string.h>  /* for memset. NOTE - not string.h!*/
 #include <linux/slab.h>    /* for kmalloc GFP flag */
 #include <errno.h>
-
-MODULE_LICENSE("GPL");
 #include <message_slot.h>
+MODULE_LICENSE("GPL");
 
 typedef struct channel
 { // Each message slot will have different channels
@@ -20,17 +19,17 @@ typedef struct channel
   char msg[BUF_LEN];
   int msg_len;
   int id;
-  channel *next;
+  struct channel *next;
 
 } channel;
 
 channel *channel_lists[MAX_MINOR_NUM]; /* This will hold a pointer to a list of the channels of each device.
-                           Minor numbers do not exceed 256, so we can use a fixed sized array for all possible minor numbers. */
+                           Minor numbers do not exceed 256, so we can use a fixed sized array for all possible minor numbers. (I used register_chrdev) */
 
 static int device_open(struct inode *inode,
                        struct file *file)
-{
-
+{                            // Because we already have an array for all possible minor nums, we dont need create a specific data structure for this file.
+  file->private_data = NULL; // Initialize the channel id of the file to NULL, so we can know if we didnt ioctl before trying to read/write
   return SUCCESS;
 }
 
@@ -44,23 +43,58 @@ static ssize_t device_read(struct file *file,
                            size_t length,
                            loff_t *offset)
 {
+  int minor = iminor(file->f_inode);
+  int i;
+  int bytes_read = 0;
+  if (file->private_data == NULL)
+  { // Check if channel id exists
+    errno = EINVAL;
+    return -1;
+  }
+  channel *f_chnl = find_channel((int)file->private_data, minor); // Get the channel corresponding to the channel id in the file private data field
+  if (f_chnl == NULL)
+  { // Check if such channel exists
+    errno = EINVAL;
+    return -1;
+  }
+  if (f_chnl->msg_len == 0)
+  {// Check if channel message not empty
+    errno = EWOULDBLOCK;
+    return -1;
+  }
+  if (length < f_chnl->msg_len)
+  {// Check if provided length is less than the channel message length
+    errno = ENOSPC;
+    return -1;
+  }
+  for (i=0; i < length && i < f_chnl->msg_len; i++)
+  {
+    if (put_user(f_chnl->msg[i], &buffer[i]) != 0)
+    {
+      errno = EBADMSG;
+      return -1;
+    }
+    bytes_read++;
+  }
 
-  return SUCCESS;
+  return bytes_read;
 }
 static ssize_t device_write(struct file *file,
                             const char __user *buffer,
                             size_t length,
                             loff_t *offset)
 {
-  char the_message[BUF_LEN]; // We use a temporary buffer to copy to so we can make sure the write was atomic
+  char the_message[BUF_LEN]; // We use a middle buffer to copy to so we can make sure the write was atomic
+  int i;
   int minor = iminor(file->f_inode);
-  if(file->private_data == NULL){
+  if (file->private_data == NULL)
+  { // Check if channel id exists
     errno = EINVAL;
     return -1;
   }
-  channel * f_chnl = find_channel((int)file->private_data, minor);
+  channel *f_chnl = find_channel((int)file->private_data, minor); // Get the channel corresponding to the channel id in the file private data field
   if (f_chnl == NULL)
-  {
+  { // Check if such channel exists
     errno = EINVAL;
     return -1;
   }
@@ -71,7 +105,7 @@ static ssize_t device_write(struct file *file,
     return -1;
   }
   for (i = 0; i < length && i < BUF_LEN; ++i)
-  {
+  { // Copy the users message to our middle buffer
     if (get_user(the_message[i], &buffer[i]) != 0)
     {
       errno = EBADMSG;
@@ -79,7 +113,7 @@ static ssize_t device_write(struct file *file,
     }
   }
   for (i = 0; i < length && i < BUF_LEN; ++i)
-  {
+  { // Copy the users message to our channel buffer
     f_chnl->msg[i] = the_message[i];
   }
   f_chnl->msg_len = length;
@@ -184,16 +218,20 @@ static void __exit simple_cleanup(void)
   unregister_chrdev(MAJOR_NUM, DEVICE_RANGE_NAME);
 }
 
-static channel * find_channel(int qid, int minor)
-{
-  channel * temp = channel_lists[minor];
-  if(temp == NULL){
+static channel *find_channel(int qid, int minor)
+{ // Used to get channel corresponding to a given id and a device minor
+  channel *temp = channel_lists[minor];
+  if (temp == NULL)
+  {
     return NULL;
   }
-  while(temp != NULL){
-    if(temp->id == qid){
+  while (temp != NULL)
+  {
+    if (temp->id == qid)
+    {
       return temp;
     }
+    temp = temp->next;
   }
   return NULL;
 }
