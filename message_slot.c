@@ -32,53 +32,58 @@ typedef struct slot
 
 static slot *slots_head;
 
-void displayLinkedList(void) {
-    slot* currentSlot = slots_head;
-    int counter = 0;
-    while (currentSlot != NULL && counter < 7) {
-        printk("------Slot %d-----", currentSlot->minor);
+// void displayLinkedList(void) {
+//     slot* currentSlot = slots_head;
+//     int counter = 0;
+//     while (currentSlot != NULL && counter < 7) {
+//         printk("------Slot %d-----", currentSlot->minor);
 
-        channel* currentChannel = currentSlot->channel_head;
-        while (currentChannel != NULL) {
-            printk("Channel %d -> with msg_len = %d", currentChannel->id, currentChannel->msg_len);
-            currentChannel = currentChannel->next;
-        }
+//         channel* currentChannel = currentSlot->channel_head;
+//         while (currentChannel != NULL) {
+//             printk("Channel %d -> with msg_len = %d", currentChannel->id, currentChannel->msg_len);
+//             currentChannel = currentChannel->next;
+//         }
 
-        currentSlot = currentSlot->next;
-        counter++;
-    }
-}
+//         currentSlot = currentSlot->next;
+//         counter++;
+//     }
+// }
 
+// Note - I got the following list handling functions from the internet
 // Function to create a new inner node
 static channel *create_channel(int id)
 {
-  channel *newNode = (channel *)kmalloc(sizeof(channel), GFP_KERNEL);
-  newNode->id = id;
-  newNode->msg_len = 0;
-  newNode->minor = -1;
-  newNode->next = NULL;
-  return newNode;
+  channel *new_node = (channel *)kmalloc(sizeof(channel), GFP_KERNEL);
+  if (new_node == NULL)
+  {
+    return NULL;
+  }
+  new_node->id = id;
+  new_node->msg_len = 0;
+  new_node->minor = -1;
+  new_node->next = NULL;
+  return new_node;
 }
 
 // Function to create a new outer node
 static slot *create_slot(int minor)
 {
-  slot *newNode = (slot *)kmalloc(sizeof(slot), GFP_KERNEL);
-  newNode->channel_head = NULL;
-  newNode->minor = minor;
-  newNode->next = NULL;
-  return newNode;
+  slot *new_slot = (slot *)kmalloc(sizeof(slot), GFP_KERNEL);
+  new_slot->channel_head = NULL;
+  new_slot->minor = minor;
+  new_slot->next = NULL;
+  return new_slot;
 }
 
 // Function to insert a new Channel node at the end of the Channel linked list
 static channel *insert_channel(channel **head, int id)
 {
-  channel *newChannelNode = create_channel(id);
+  channel *new_channel = create_channel(id);
   if (*head == NULL)
   {
     // If the list is empty, make the new node as the head
-    *head = newChannelNode;
-    return newChannelNode;
+    *head = new_channel;
+    return new_channel;
   }
   else
   {
@@ -88,21 +93,21 @@ static channel *insert_channel(channel **head, int id)
     {
       curr = curr->next;
     }
-    curr->next = newChannelNode;
-    return newChannelNode;
+    curr->next = new_channel;
+    return new_channel;
   }
 }
 
 // Function to insert a new outer node at the beginning of the outer linked list
 static slot *insert_slot(int minor)
 {
-  slot *newSlotNode = create_slot(minor);
+  slot *new_slot = create_slot(minor);
 
   if (slots_head == NULL)
   {
     // If the list is empty, make the new node as the head
-    slots_head = newSlotNode;
-    return newSlotNode;
+    slots_head = new_slot;
+    return new_slot;
   }
   else
   {
@@ -112,11 +117,10 @@ static slot *insert_slot(int minor)
     {
       curr = curr->next;
     }
-    curr->next = newSlotNode;
-    return newSlotNode;
+    curr->next = new_slot;
+    return new_slot;
   }
 }
-
 
 static int device_open(struct inode *inode,
                        struct file *file)
@@ -137,7 +141,7 @@ static ssize_t device_read(struct file *file,
 {
   int bytes_read = 0;
   int i;
-  channel * chnl = (channel *)file->private_data;
+  channel *chnl = (channel *)file->private_data;
   if (chnl == NULL)
   { // Check if such channel exists
     // errno = EINVAL;
@@ -176,20 +180,17 @@ static ssize_t device_write(struct file *file,
   if (file->private_data == NULL)
   { // Check if channel id exists
     // errno = EINVAL;
-    printk("private data was NULL!");
     return -1;
   }
   if (chnl == NULL)
   { // Check if such channel exists
     // errno = EINVAL;
-    printk("chnl was NULL!");
     return -1;
   }
 
   if (length <= 0 || length > BUF_LEN)
   {
     // errno = EMSGSIZE;
-    printk("invalid length");
     return -1;
   }
   for (i = 0; i < length && i < BUF_LEN; ++i)
@@ -197,7 +198,6 @@ static ssize_t device_write(struct file *file,
     if (get_user(the_message[i], &buffer[i]) != 0)
     {
       // errno = EBADMSG;
-      printk("failed inside get_user loop");
       return -1;
     }
   }
@@ -206,8 +206,6 @@ static ssize_t device_write(struct file *file,
     chnl->msg[i] = the_message[i];
   }
   chnl->msg_len = length;
-  printk("wrote the message %s of length %d", chnl->msg, chnl->msg_len);
-  displayLinkedList();
   return chnl->msg_len;
 }
 static long device_ioctl(struct file *file,
@@ -219,7 +217,6 @@ static long device_ioctl(struct file *file,
     // errno = EINVAL;
     return -1;
   }
-  // printk("inside ioctl line 138 with param = %d", ioctl_param);
   int minor = iminor(file->f_inode);
   slot *curr = slots_head;
   while (curr->next != NULL)
@@ -233,21 +230,17 @@ static long device_ioctl(struct file *file,
   channel *chnl_head = curr->channel_head;
   if (curr->channel_head == NULL)
   {
-    channel *newChannel = insert_channel(&(curr->channel_head), ioctl_param);
-    newChannel->minor = minor;
-    newChannel->id = ioctl_param;
-    newChannel->msg_len = 0;
-    file->private_data = (void *)newChannel;
-    // printk("head was NULL. Created a new channel with id %d", newChannel->id);
-    // displayLinkedList();
+    channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param);
+    new_channel->minor = minor;
+    new_channel->id = ioctl_param;
+    new_channel->msg_len = 0;
+    file->private_data = (void *)new_channel;
     return SUCCESS;
   }
   while (chnl_head->next != NULL)
   {
     if (chnl_head->id == ioctl_param)
     {
-      // printk("found existing channel with id %d", chnl_head->id);
-      // displayLinkedList();
       file->private_data = (void *)chnl_head;
       return SUCCESS;
     }
@@ -255,18 +248,14 @@ static long device_ioctl(struct file *file,
   }
   if (chnl_head->id == ioctl_param)
   {
-    // printk("found existing channel with id %d", chnl_head->id);
-    // displayLinkedList();
     file->private_data = (void *)chnl_head;
     return SUCCESS;
   }
-  channel *newChannel = insert_channel(&(curr->channel_head), ioctl_param);
-  newChannel->minor = minor;
-  newChannel->id = ioctl_param;
-  newChannel->msg_len = 0;
-  file->private_data = (void *)newChannel;
-  // printk("Created a new channel with id %d", newChannel->id);
-  // displayLinkedList();
+  channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param);
+  new_channel->minor = minor;
+  new_channel->id = ioctl_param;
+  new_channel->msg_len = 0;
+  file->private_data = (void *)new_channel;
   return SUCCESS;
 }
 
@@ -284,7 +273,7 @@ static int __init simple_init(void)
   int rc = -1;
   int i = 0;
   slots_head = NULL;
-  for (i = 0; i < MAX_MINOR_NUM; i++)
+  for (i = 0; i < MAX_MINOR_NUM; i++) // We can have at most 256 minor numbers so we can just initialize the list now instead of checking later for NULLs
   {
     insert_slot(i);
   }
