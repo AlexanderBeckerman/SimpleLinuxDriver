@@ -23,27 +23,28 @@ int main(int argc, char *argv[])
     }
     file_path = argv[1];
     channel_id = atoi(argv[2]);
-
+    printf("got here 26\n");
     file_desc = open(file_path, O_RDWR);
     if (file_desc < 0)
     {
         perror("Can't open device file\n");
         exit(1);
     }
-
+    printf("got here 33\n");
     ret_val = ioctl(file_desc, MSG_SLOT_CHANNEL, channel_id);
     if (ret_val == -1)
     {
         perror("error occured in ioctl\n");
         exit(1);
     }
-
+    printf("got here 40\n");
     bytes_read = read(file_desc, message, BUF_LEN);
     if (bytes_read < 0)
     {
-        perror("error writing to device\n");
+        perror("error reading from device\n");
         exit(1);
     }
+    printf("got here 47\n");
     close(file_desc);
     ret_val = write(STDOUT_FILENO, message, bytes_read);
     if (ret_val != bytes_read)

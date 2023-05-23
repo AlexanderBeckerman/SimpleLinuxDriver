@@ -37,14 +37,15 @@ int main(int argc, char *argv[])
         perror("error occured in ioctl\n");
         exit(1);
     }
-
+    printf("got after ioctl 40\n");
     ret_val = write(file_desc, message, strlen(message)); // strlen does not count the null character
     if (ret_val == -1)
     {
         perror("error writing to device\n");
         exit(1);
     }
-    close(file_desc);
-
+    printf("got after write\n");
+    int r = close(file_desc);
+    printf("r is %d\n", r);
     exit(0);
 }
