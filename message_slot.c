@@ -239,7 +239,7 @@ static long device_ioctl(struct file *file,
     channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param);
     new_channel->id = ioctl_param;
     new_channel->msg_len = 0;
-    fdata->file_channel = new_channel;
+    fdata->file_channel = new_channel; // Link the created channel with the current file
     file->private_data = (void *)fdata;
     return SUCCESS;
   }
@@ -247,7 +247,7 @@ static long device_ioctl(struct file *file,
   { // If there are channels, look through the list for a channel with the same given ID
     if (chnl_head->id == ioctl_param)
     {
-      fdata->file_channel = chnl_head;
+      fdata->file_channel = chnl_head; // Link the existing channel with the current file
       file->private_data = (void *)fdata;
       return SUCCESS;
     }
@@ -255,14 +255,14 @@ static long device_ioctl(struct file *file,
   }
   if (chnl_head->id == ioctl_param)
   {
-    fdata->file_channel = chnl_head;
+    fdata->file_channel = chnl_head; // Link the existing channel with the current file
     file->private_data = (void *)fdata;
     return SUCCESS;
   }
   channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param); // If we didn't find an existing channel, create a new one and add it
   new_channel->id = ioctl_param;
   new_channel->msg_len = 0;
-  fdata->file_channel = new_channel; // Store the channel inside the data struct inside the file private data
+  fdata->file_channel = new_channel; // Link the created channel with the current file
   file->private_data = (void *)fdata;
   return SUCCESS;
 }
@@ -281,7 +281,7 @@ static int __init simple_init(void)
   int rc = -1;
   int i = 0;
   slots_head = NULL;
-  for (i = 0; i < MAX_MINOR_NUM; i++) // We can have at most 256 minor numbers so we can just initialize the list now instead of checking later for NULLs
+  for (i = 0; i < MAX_MINOR_NUM; i++) // We can have at most 256 minor numbers so we can just initialize the list now instead of initializing one by one later
   {
     insert_slot(i);
   }
