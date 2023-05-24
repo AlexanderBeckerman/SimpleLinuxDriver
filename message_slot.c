@@ -150,24 +150,24 @@ static ssize_t device_read(struct file *file,
   if (chnl == NULL)
   { // Check if such channel exists
     // errno = EINVAL;
-    return -1;
+    return -EINVAL;
   }
   if (chnl->msg_len == 0)
   { // Check if channel message not empty
     // errno = EWOULDBLOCK;
-    return -1;
+    return -EWOULDBLOCK;
   }
   if (length < chnl->msg_len)
   { // Check if provided length is less than the channel message length
     // errno = ENOSPC;
-    return -1;
+    return -ENOSPC;
   }
   for (i = 0; i < length; ++i)
   { // Copy the users message to our backup buffer
     if (get_user(backup[i], &buffer[i]) != 0)
     {
       // errno = EBADMSG;
-      return -1;
+      return -EBADMSG;
     }
   }
   for (i = 0; i < length && i < chnl->msg_len; i++)
@@ -179,7 +179,7 @@ static ssize_t device_read(struct file *file,
         put_user(backup[j], &buffer[j]); // Answer in forum said we can assume this succeedes
       }
       // errno = EBADMSG;
-      return -1;
+      return -EBADMSG;
     }
     bytes_read++;
   }
@@ -198,25 +198,25 @@ static ssize_t device_write(struct file *file,
   if (file->private_data == NULL)
   { // Check if channel id exists
     // errno = EINVAL;
-    return -1;
+    return -EINVAL;
   }
   if (chnl == NULL)
   { // Check if such channel exists
     // errno = EINVAL;
-    return -1;
+    return -EINVAL;
   }
 
   if (length <= 0 || length > BUF_LEN)
   {
     // errno = EMSGSIZE;
-    return -1;
+    return -EMSGSIZE;
   }
   for (i = 0; i < length && i < BUF_LEN; ++i)
   { // Copy the users message to our middle buffer
     if (get_user(the_message[i], &buffer[i]) != 0)
     {
       // errno = EBADMSG;
-      return -1;
+      return -EBADMSG;
     }
   }
   for (i = 0; i < length && i < BUF_LEN; ++i)
@@ -233,7 +233,7 @@ static long device_ioctl(struct file *file,
   if (ioctl_command_id != MSG_SLOT_CHANNEL || ioctl_param == 0)
   {
     // errno = EINVAL;
-    return -1;
+    return -EINVAL;
   }
   data *fdata = (data *)file->private_data;
   int minor = fdata->minor;
