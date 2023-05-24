@@ -143,8 +143,10 @@ static ssize_t device_read(struct file *file,
 {
   int bytes_read = 0;
   int i;
-  data *fdata = (data *)file->private_data;
-  channel *chnl = fdata->file_channel;
+  int j;
+  data *fdata = (data *)file->private_data; 
+  channel *chnl = fdata->file_channel; // Get the channel from the file
+  char * backup = (char *)kmalloc(sizeof(char)*length, GFP_KERNEL); // Backup for the buffer in case of a failed read
   if (chnl == NULL)
   { // Check if such channel exists
     // errno = EINVAL;
@@ -160,16 +162,28 @@ static ssize_t device_read(struct file *file,
     // errno = ENOSPC;
     return -1;
   }
+  for (i = 0; i < length; ++i)
+  { // Copy the users message to our backup buffer
+    if (get_user(backup[i], &buffer[i]) != 0)
+    {
+      // errno = EBADMSG;
+      return -1;
+    }
+  }
   for (i = 0; i < length && i < chnl->msg_len; i++)
   {
     if (put_user(chnl->msg[i], &buffer[i]) != 0)
     {
+      for (j = 0; j < i; j++)
+      { // Restore the buffer in case of fail
+        put_user(backup[j], &buffer[j]); // Answer in forum said we can assume this succeedes
+      }
       // errno = EBADMSG;
       return -1;
     }
     bytes_read++;
   }
-
+  kfree(backup);
   return bytes_read;
 }
 static ssize_t device_write(struct file *file,
@@ -180,7 +194,7 @@ static ssize_t device_write(struct file *file,
   char the_message[BUF_LEN]; // We use a middle buffer to copy to so we can make sure the write was atomic
   int i;
   data *fdata = (data *)file->private_data;
-  channel *chnl = fdata->file_channel;
+  channel *chnl = fdata->file_channel; // Get the channel from the file
   if (file->private_data == NULL)
   { // Check if channel id exists
     // errno = EINVAL;
