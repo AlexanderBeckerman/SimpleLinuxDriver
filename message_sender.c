@@ -27,25 +27,25 @@ int main(int argc, char *argv[])
     file_desc = open(file_path, O_RDWR);
     if (file_desc < 0)
     {
-        printf("Can't open device file: %s\n", file_path);
+        perror("Can't open device file");
         exit(1);
     }
 
     ret_val = ioctl(file_desc, MSG_SLOT_CHANNEL, channel_id);
-    if (ret_val == -1)
+    if (ret_val < 0)
     {
-        perror("error occured in ioctl\n");
+        perror("error occured in ioctl");
         exit(1);
     }
     ret_val = write(file_desc, message, strlen(message)); // strlen does not count the null character
-    if (ret_val == -1)
+    if (ret_val < 0)
     {
-        perror("error writing to device\n");
+        perror("error writing to device");
         exit(1);
     }
     ret_val = close(file_desc);
     if (ret_val < 0){
-        perror("error closing file\n");
+        perror("error closing file");
         exit(1);
     }
     exit(0);

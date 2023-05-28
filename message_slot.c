@@ -9,7 +9,6 @@
 #include <linux/uaccess.h> /* for get_user and put_user */
 #include <linux/string.h>  /* for memset. NOTE - not string.h!*/
 #include <linux/slab.h>    /* for kmalloc GFP flag */
-// #include <errno.h>
 #include "message_slot.h"
 MODULE_LICENSE("GPL");
 
@@ -37,7 +36,7 @@ typedef struct data
 
 static slot *slots_head; // I will use a linked list of slots where each slot holds a linked list of channels
 
-// Note - I got the following list handling functions from the internet
+// Note - I got the following list handling functions from the internet (with some changes i made)
 // Function to create a new channel node
 static channel *create_channel(int id)
 {
@@ -116,7 +115,7 @@ static slot *insert_slot(int minor)
 static int device_open(struct inode *inode,
                        struct file *file)
 {
-  int minor = iminor(inode);
+  int minor = iminor(inode); // On opening a file we want to save the minor for future use
   data *fdata = (data *)kmalloc(sizeof(data), GFP_KERNEL); // Use the data struct to hold the minor of the file (and its channel in the future)
   if (fdata == NULL)
   {
@@ -315,7 +314,7 @@ static int __init simple_init(void)
 
 static void __exit simple_cleanup(void)
 {
-  // Free the allocated memory
+  // Free the allocated memory (our slot and channel lists)
   slot *curr_slot = slots_head;
   slot *next_slot;
   while (curr_slot != NULL)

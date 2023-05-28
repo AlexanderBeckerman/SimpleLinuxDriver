@@ -18,7 +18,7 @@ int main(int argc, char *argv[])
 
     if (argc != 3)
     {
-        perror("invalid number of arguments\n");
+        perror("invalid number of arguments");
         exit(1);
     }
     file_path = argv[1];
@@ -26,31 +26,31 @@ int main(int argc, char *argv[])
     file_desc = open(file_path, O_RDWR);
     if (file_desc < 0)
     {
-        perror("Can't open device file\n");
+        perror("Can't open device file");
         exit(1);
     }
     ret_val = ioctl(file_desc, MSG_SLOT_CHANNEL, channel_id);
-    if (ret_val == -1)
+    if (ret_val < 0)
     {
-        perror("error occured in ioctl\n");
+        perror("error occured in ioctl");
         exit(1);
     }
     bytes_read = read(file_desc, message, BUF_LEN);
     if (bytes_read < 0)
     {
-        perror("error reading from device\n");
+        perror("error reading from device");
         exit(1);
     }
     ret_val = close(file_desc);
     if (ret_val < 0)
     {
-        perror("error closing file\n");
+        perror("error closing file");
         exit(1);
     }
     ret_val = write(STDOUT_FILENO, message, bytes_read);
     if (ret_val != bytes_read)
     {
-        perror("error occured writing to stdout\n");
+        perror("error occured writing to stdout");
         exit(1);
     }
 
