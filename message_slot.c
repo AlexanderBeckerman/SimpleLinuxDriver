@@ -250,8 +250,11 @@ static long device_ioctl(struct file *file,
   if (curr->channel_head == NULL)
   { // If no channels yet, create a new one
     channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param);
-    new_channel->id = ioctl_param;
-    new_channel->msg_len = 0;
+    if (new_channel != NULL)
+    {// Make sure allocation was succesful
+      new_channel->id = ioctl_param;
+      new_channel->msg_len = 0;
+    }
     fdata->file_channel = new_channel; // Link the created channel with the current file
     file->private_data = (void *)fdata;
     return SUCCESS;
@@ -273,8 +276,11 @@ static long device_ioctl(struct file *file,
     return SUCCESS;
   }
   channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param); // If we didn't find an existing channel, create a new one and add it
-  new_channel->id = ioctl_param;
-  new_channel->msg_len = 0;
+  if (new_channel != NULL)
+  {// Make sure allocation was succesful
+    new_channel->id = ioctl_param;
+    new_channel->msg_len = 0;
+  }
   fdata->file_channel = new_channel; // Link the created channel with the current file
   file->private_data = (void *)fdata;
   return SUCCESS;
