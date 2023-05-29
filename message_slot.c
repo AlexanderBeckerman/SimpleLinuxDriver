@@ -31,6 +31,7 @@ typedef struct slot
 typedef struct data
 { // Information for each file private data. Will hold the channel of the file and the minor.
   int minor;
+  int channel_id;
   struct channel *file_channel;
 } data;
 
@@ -65,7 +66,7 @@ static slot *create_slot(int minor)
   return new_slot;
 }
 
-// Function to insert a new channel node at the end of the channel linked list
+// Function to create and insert a new channel node at the end of the channel linked list
 static channel *insert_channel(channel **head, int id)
 {
   channel *new_channel = create_channel(id);
@@ -88,7 +89,7 @@ static channel *insert_channel(channel **head, int id)
   }
 }
 
-// Function to insert a new slot node at the end of the slot linked list
+// Function to create and insert a new slot node at the end of the slot linked list
 static slot *insert_slot(int minor)
 {
   slot *new_slot = create_slot(minor);
@@ -112,17 +113,63 @@ static slot *insert_slot(int minor)
   }
 }
 
+// Function to get the channel corresponding to the id or create a new one with the given id
+// If allocation fails, it returns NULL and then when we read/write we can return an error
+static channel *find_create_channel(int minor, int id)
+{
+  slot *curr = slots_head;
+  while (curr->next != NULL)
+  { // Get to the corresponding slot node
+    if (curr->minor == minor)
+    {
+      break;
+    }
+    curr = curr->next;
+  }
+  channel *chnl_head = curr->channel_head;
+  if (curr->channel_head == NULL)
+  { // If no channels yet, create a new one
+    channel *new_channel = insert_channel(&(curr->channel_head), id);
+    if (new_channel != NULL)
+    { // Make sure allocation was succesful
+      new_channel->id = id;
+      new_channel->msg_len = 0;
+    }
+    return new_channel;
+  }
+  while (chnl_head->next != NULL)
+  { // If there are channels, look through the list for a channel with the same given ID
+    if (chnl_head->id == id)
+    {
+      return chnl_head;
+    }
+    chnl_head = chnl_head->next;
+  }
+  if (chnl_head->id == id)
+  {
+    return chnl_head;
+  }
+  channel *new_channel = insert_channel(&(curr->channel_head), id); // If we didn't find an existing channel, create a new one and add it
+  if (new_channel != NULL)
+  { // Make sure allocation was succesful
+    new_channel->id = id;
+    new_channel->msg_len = 0;
+  }
+  return new_channel;
+}
+
 static int device_open(struct inode *inode,
                        struct file *file)
 {
-  int minor = iminor(inode); // On opening a file we want to save the minor for future use
+  int minor = iminor(inode);                               // On opening a file we want to save the minor for future use
   data *fdata = (data *)kmalloc(sizeof(data), GFP_KERNEL); // Use the data struct to hold the minor of the file (and its channel in the future)
   if (fdata == NULL)
   {
     return -1;
   }
   fdata->minor = minor;
-  fdata->file_channel = NULL;
+  fdata->file_channel = NULL; // Set channel to NULL and id to default id
+  fdata->channel_id = 0;
   file->private_data = (void *)fdata;
   return SUCCESS;
 }
@@ -143,14 +190,17 @@ static ssize_t device_read(struct file *file,
   int bytes_read = 0;
   int i;
   int j;
-  data *fdata = (data *)file->private_data; 
-  channel *chnl = fdata->file_channel; // Get the channel from the file
-  char * backup = (char *)kmalloc(sizeof(char)*length, GFP_KERNEL); // Backup for the buffer in case of a failed read
-  if (chnl == NULL)
+  data *fdata = (data *)file->private_data;
+  channel *chnl = find_create_channel(fdata->minor, fdata->channel_id); // Get the corresponding channel or create a new one, if called before ioctl will return channel with id 0
+  char *backup = (char *)kmalloc(sizeof(char) * length, GFP_KERNEL);    // Backup for the buffer in case of a failed read
+  if (chnl == NULL || chnl->id == 0)
   { // Check if such channel exists
     // errno = EINVAL;
     return -EINVAL;
   }
+  fdata->file_channel = chnl;
+  fdata->channel_id = chnl->id;
+  file->private_data = (void *)fdata;
   if (chnl->msg_len == 0)
   { // Check if channel message not empty
     // errno = EWOULDBLOCK;
@@ -174,7 +224,7 @@ static ssize_t device_read(struct file *file,
     if (put_user(chnl->msg[i], &buffer[i]) != 0)
     {
       for (j = 0; j < i; j++)
-      { // Restore the buffer in case of fail
+      {                                  // Restore the buffer in case of fail
         put_user(backup[j], &buffer[j]); // Answer in forum said we can assume this succeedes
       }
       // errno = EBADMSG;
@@ -193,18 +243,15 @@ static ssize_t device_write(struct file *file,
   char the_message[BUF_LEN]; // We use a middle buffer to copy to so we can make sure the write was atomic
   int i;
   data *fdata = (data *)file->private_data;
-  channel *chnl = fdata->file_channel; // Get the channel from the file
-  if (file->private_data == NULL)
+  channel *chnl = find_create_channel(fdata->minor, fdata->channel_id); // Get the corresponding channel or create a new one, if called before ioctl will return channel with id 0
+  if (chnl == NULL || fdata->channel_id == 0)
   { // Check if channel id exists
     // errno = EINVAL;
     return -EINVAL;
   }
-  if (chnl == NULL)
-  { // Check if such channel exists
-    // errno = EINVAL;
-    return -EINVAL;
-  }
-
+  fdata->file_channel = chnl;
+  fdata->channel_id = chnl->id;
+  file->private_data = (void *)fdata;
   if (length <= 0 || length > BUF_LEN)
   {
     // errno = EMSGSIZE;
@@ -235,54 +282,9 @@ static long device_ioctl(struct file *file,
     return -EINVAL;
   }
   data *fdata = (data *)file->private_data;
-  int minor = fdata->minor;
+  fdata->channel_id = ioctl_param; // Set the id of the channel so later when we write/read we can access it
+                                   // I allocate the channel node later when we call read/write on the file (using find_create_channel)
 
-  slot *curr = slots_head;
-  while (curr->next != NULL)
-  { // Get to the corresponding slot node
-    if (curr->minor == minor)
-    {
-      break;
-    }
-    curr = curr->next;
-  }
-  channel *chnl_head = curr->channel_head;
-  if (curr->channel_head == NULL)
-  { // If no channels yet, create a new one
-    channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param);
-    if (new_channel != NULL)
-    {// Make sure allocation was succesful
-      new_channel->id = ioctl_param;
-      new_channel->msg_len = 0;
-    }
-    fdata->file_channel = new_channel; // Link the created channel with the current file
-    file->private_data = (void *)fdata;
-    return SUCCESS;
-  }
-  while (chnl_head->next != NULL)
-  { // If there are channels, look through the list for a channel with the same given ID
-    if (chnl_head->id == ioctl_param)
-    {
-      fdata->file_channel = chnl_head; // Link the existing channel with the current file
-      file->private_data = (void *)fdata;
-      return SUCCESS;
-    }
-    chnl_head = chnl_head->next;
-  }
-  if (chnl_head->id == ioctl_param)
-  {
-    fdata->file_channel = chnl_head; // Link the existing channel with the current file
-    file->private_data = (void *)fdata;
-    return SUCCESS;
-  }
-  channel *new_channel = insert_channel(&(curr->channel_head), ioctl_param); // If we didn't find an existing channel, create a new one and add it
-  if (new_channel != NULL)
-  {// Make sure allocation was succesful
-    new_channel->id = ioctl_param;
-    new_channel->msg_len = 0;
-  }
-  fdata->file_channel = new_channel; // Link the created channel with the current file
-  file->private_data = (void *)fdata;
   return SUCCESS;
 }
 
